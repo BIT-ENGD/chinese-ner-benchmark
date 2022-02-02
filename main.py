@@ -1,8 +1,9 @@
 from async_timeout import enum
+from black import out
 from sklearn.utils import shuffle
 import torch
 import  torch.functional as F
-from  model.bilstm_crf import  BERT_BiLSTM_CRF as Model
+from  model.bilstm_crf import  BERT_BiLSTM_CRF_Ex as Model
 from model.dataset import NERDataset
 import optparse
 import pickle
@@ -52,8 +53,11 @@ VALID_SET=1
 TEST_SET=2
 MAX_SEQUECE_LEN=128   #最大长度
 BERT_NAME="bert-base-chinese"
-BATCH_SIZE=
+BATCH_SIZE=16
 
+DATA_SET_FILE="dataset.dat"
+RNN_DIM=128
+NEED_BIRNN=True
 def setseed(seed=0):
     torch.manual_seed(seed)  # 设置随机数种子，方便重现
     torch.cuda.manual_seed(seed)
@@ -63,19 +67,57 @@ def get_data_path(dataset,type=TRAIN_SET):  #
     datapath=os.path.join(DATA_DIR,dataset,DATASET_INFO[dataset][type])
     return os.path.abspath(datapath)
 
+def  save_var(var,filename):
+    with open(filename,"wb") as f:
+        pickle.dump(var,f)
+
+def  load_var(filename):
+    with open(filename,"rb") as f:
+        return pickle.load(f)
+
+
+
+def collate(data):
+   
+    input_ids, token_type_ids, attention_mask,label_id,ori_tokens = list(zip(*data))
+  
+    new_input_ids = torch.LongTensor(input_ids)
+    new_token_type_ids = torch.LongTensor(token_type_ids)
+    new_attention_mask = torch.LongTensor(attention_mask)
+    new_label_id = torch.LongTensor(label_id)
+    #new_ori_tokens = torch.LongTensor(ori_tokens)
+  
+   # return (input_ids, token_type_ids,attention_mask,label_id,ori_tokens)
+    return (new_input_ids, new_token_type_ids,new_attention_mask,new_label_id),ori_tokens
+
 
 def train(dataset,type=TRAIN_SET,device=torch.device("cuda" if torch.cuda.is_available() else "cpu")):
-    tokenizer=BertTokenizer.from_pretrained(BERT_NAME,do_lower_case=True)
-    bert_config = BertConfig.from_pretrained(BERT_NAME)
+
     datapath=get_data_path(dataset)
-    train_data=NERDataset(datapath,tokenizer,MAX_SEQUECE_LEN)
-    dataloader=DataLoader(train_data,batch_size=BATCH_SIZE,sampler=RandomSampler(train_data))
+    tokenizer=BertTokenizer.from_pretrained(BERT_NAME,do_lower_case=True)
+    if os.path.exists(DATA_SET_FILE):
+       train_data= load_var(DATA_SET_FILE)
+    else:
+        train_data=NERDataset(datapath,tokenizer,MAX_SEQUECE_LEN)
+        save_var(train_data,DATA_SET_FILE)
+    num_labels=len(train_data.get_label())
+    bert_config = BertConfig.from_pretrained(BERT_NAME,num_labels=num_labels)
+    model=Model.from_pretrained(BERT_NAME,config=bert_config,rnn_dim=RNN_DIM,need_birnn=NEED_BIRNN)
+
+
+    dataloader=DataLoader(train_data,batch_size=BATCH_SIZE,collate_fn=collate,sampler=RandomSampler(train_data))
     id2tag,tag2id=train_data.get_tags_ids()
-    model=Model(bert_config)
+ 
     model.to(device)
-   
-    for i, (token_ids,token_type_ids,attention_mask,tagids,ori_text) in enumerate(dataloader):
-        print(token_ids)
+
+
+    for i, batch in enumerate(dataloader):
+        batch,ori_text=batch
+        batch = tuple(t.to(device) for t in batch)
+        token_ids,token_type_ids,attention_mask,tagids=batch
+        outputs=model(token_ids,tagids,token_type_ids,attention_mask)
+        loss=outputs
+        
 
 def valid():
     pass 
@@ -90,7 +132,8 @@ def main(Opt):
     else:
         device=torch.device("cpu")
     #lstmcrfModel=Model()
-    train(Opt.dataset,device)
+
+    train(dataset=Opt.dataset,device=device)
 
 
 

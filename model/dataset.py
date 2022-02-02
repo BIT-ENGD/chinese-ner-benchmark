@@ -101,3 +101,5 @@ class NERDataset(Dataset):
         tag2id={tag:i for i,tag in enumerate(self.alltags) }
         return self.alltags,tag2id
          
+    def get_label(self):
+        return self.alltags
