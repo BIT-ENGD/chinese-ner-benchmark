@@ -35,16 +35,16 @@ class NERDataset(Dataset):
         self.data=[]
  
         self.alltags=set()
-        self.words=set()
-   
-        
-        self.tags=[]
+         
+        self.ori_texts=[]
         self.featues=[]
+        self.tag2id={}
 
         self.tokenizer=tokenizer
         self.max_seq_len=max_seq_len
+        self.id2tag=[]
         self.readfile(filename)
-        self.ori_texts=list()
+      
 
     
         
@@ -56,6 +56,7 @@ class NERDataset(Dataset):
         return len(self.featues)
 
     def readfile(self,filename):
+        ori_texts=[]
         with open(filename,encoding="utf-8") as f:
             thisline = []
             thistag = []
@@ -83,25 +84,29 @@ class NERDataset(Dataset):
                         thistag=["O"]+thistag+["O"]
 
                     ori_text=self.tokenizer.decode(input_ids)
+                    ori_texts.append(ori_text)
                     self.featues.append(InputFeatures(input_ids,token_type_ids,attention_mask,thistag,ori_text))
-                    self.ori_texts.append(ori_text)
+                    
                     thisline=[]
                     thistag=[]
         
+        #
+        self.tag2id={tag:i for i,tag in enumerate(self.alltags) }
+        self.id2tag= list(self.alltags)
         # convert  labels to Ids.
-
+        self.ori_texts=ori_texts
         _,tag2id = self.get_tags_ids()
         for index,feature in enumerate(tqdm(self.featues)):
             for id in range(len(feature.label_id)):
                 self.featues[index].label_id[id] = tag2id[self.featues[index].label_id[id]]
      
-            
+        print("...")    
     def get_tag_num(self):
         return len(self.tags)
 
     def get_tags_ids(self):
-        tag2id={tag:i for i,tag in enumerate(self.alltags) }
-        return list(self.alltags),tag2id
+        
+        return self.id2tag,self.tag2id
          
     def get_label(self):
         return self.alltags
