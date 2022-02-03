@@ -44,3 +44,7 @@ for x in zip(u, v):
 
 t=torch.eye(5,6)
 print(t)
+
+LR_RATE=3e-05  #0.00003
+
+print(0.00003*100000)
