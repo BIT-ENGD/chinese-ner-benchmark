@@ -11,7 +11,7 @@ import logging
 from  tensorboardX  import SummaryWriter
 from tqdm  import tqdm, trange
 import os 
-from  torch.utils.data import Dataset,DataLoader,RandomSampler
+from  torch.utils.data import Dataset,DataLoader,RandomSampler,SequentialSampler
 from transformers import  AdamW, get_linear_schedule_with_warmup,BertTokenizer,BertConfig
 #import conlleval as evaluate
 
@@ -54,7 +54,7 @@ VALID_SET=1
 TEST_SET=2
 MAX_SEQUECE_LEN=128   #最大长度
 BERT_NAME="bert-base-chinese"
-BATCH_SIZE=64
+BATCH_SIZE=128 #64
 
 DATASET_TRAIN_FILE="dataset.dat"
 DATASET_VALID_FILE="dataset_valid.dat"
@@ -69,6 +69,7 @@ GRADIENT_ACCUMULATION_STEPS=1
 EPOCH_NUM=10
 LOGGIN_STEPS=500
 OUTPUT_DIR="output"
+DO_TRAIN=True
 DO_EVAL=True
 DO_TEST=True
 def setseed(seed=0):
@@ -112,7 +113,8 @@ def do_valid(dataset,model,tokenizer,device,writer):
         valid_data=NERDataset(datapath,tokenizer,MAX_SEQUECE_LEN)
         save_var(valid_data,DATASET_VALID_FILE)
     id2tag,tag2id=valid_data.get_tags_ids()
-    dataloader=DataLoader(valid_data,batch_size=BATCH_SIZE,collate_fn=collate,sampler=RandomSampler(valid_data))
+    dataloader=DataLoader(valid_data,batch_size=BATCH_SIZE,collate_fn=collate,sampler=SequentialSampler(valid_data))
+    new_ori_text=[]
     for step, batch in enumerate(tqdm(dataloader,desc="Valid DataLoader Progress")):
         batch,ori_text=batch
         batch = tuple(t.to(device) for t in batch)
@@ -121,14 +123,17 @@ def do_valid(dataset,model,tokenizer,device,writer):
             logits=model.predict(token_ids,token_type_ids,attention_mask)
         for l in logits:
             pred_labels.append([id2tag[idx] for idx in l])
-        eval_list = []
-        all_ori_tokens=valid_data.get_ori_tokens()
-        for ori_tokens, oril, prel in zip(all_ori_tokens, ori_labels, pred_labels):
-            for ot, ol, pl in zip(ori_tokens, oril, prel):
-                if ot in ["[CLS]", "[SEP]"]:
-                    continue
-                eval_list.append(f"{ot} {ol} {pl}\n")
-            eval_list.append("\n")
+        for l in tagids:
+            ori_labels.append([id2tag[idx.item()] for idx in l])
+        new_ori_text.extend(ori_text)
+    eval_list = []
+    all_ori_tokens=valid_data.get_ori_tokens()
+    for ori_tokens, oril, prel in zip(all_ori_tokens, ori_labels, pred_labels):
+        for ot, ol, pl in zip(ori_tokens, oril, prel):
+            if ot in ["[CLS]", "[SEP]"]:
+                continue
+            eval_list.append(f"{ot} {ol} {pl}\n")
+        eval_list.append("\n")
 
 def do_test(dataset,model,tokenizer,device,writer):
     ori_labels, pred_labels = [], []
@@ -168,7 +173,7 @@ def do_train(dataset,type=TRAIN_SET,device=torch.device("cuda" if torch.cuda.is_
     global_step, tr_loss, logging_loss, best_f1 = 0, 0.0, 0.0, 0.0
     for epoch in tqdm(range(EPOCH_NUM),desc="Epoch Progress"):
         model.train()
-        for step, batch in enumerate(tqdm(dataloader,desc="DataLoader Progress")):
+        for step, batch in enumerate(tqdm(dataloader,desc="Train DataLoader Progress")):
             batch,ori_text=batch
             batch = tuple(t.to(device) for t in batch)
             token_ids,token_type_ids,attention_mask,tagids=batch
@@ -192,8 +197,8 @@ def do_train(dataset,type=TRAIN_SET,device=torch.device("cuda" if torch.cuda.is_
         if DO_EVAL:
            do_valid(dataset,model,tokenizer,device,writer)
 
-        if DO_TEST:
-            do_test(dataset,model,tokenizer,device,writer)
+    if DO_TEST:
+        do_test(dataset,model,tokenizer,device,writer)
 
 
 
@@ -207,7 +212,8 @@ def main(Opt):
         device=torch.device("cpu")
     #lstmcrfModel=Model()
 
-    do_train(dataset=Opt.dataset,device=device)
+    if DO_TRAIN:
+        do_train(dataset=Opt.dataset,device=device)
 
 
 
